@@ -10,5 +10,8 @@ data class EventEntity(
     val title: String,
     val startTime: Long,
     val endTime: Long,
-    val isSeen: Boolean
+    val isSeen: Boolean,
+    val location: String?,
+    val isAllDay: Boolean,
+    val lastDate: Long
 )

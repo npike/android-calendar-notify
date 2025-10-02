@@ -8,7 +8,6 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import net.npike.android.calendarnotify.data.local.AppDatabase
-import net.npike.android.calendarnotify.data.local.CalendarDao
 import net.npike.android.calendarnotify.data.local.EventDao
 import javax.inject.Singleton
 
@@ -30,11 +29,5 @@ object DatabaseModule {
     @Provides
     fun provideEventDao(database: AppDatabase): EventDao {
         return database.eventDao()
-    }
-
-    @Singleton
-    @Provides
-    fun provideCalendarDao(database: AppDatabase): CalendarDao {
-        return database.calendarDao()
     }
 }

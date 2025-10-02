@@ -11,7 +11,6 @@ import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import net.npike.android.calendarnotify.data.local.DataStoreManager
-import kotlinx.coroutines.runBlocking // Import runBlocking
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,13 +23,6 @@ class WorkManagerInitializer @Inject constructor(
     private val workManager = WorkManager.getInstance(context)
 
     fun initialize() {
-        runBlocking { // Use runBlocking for suspend functions in initialize
-            // Persist first run timestamp if not already set
-            if (dataStoreManager.getFirstRunTimestamp() == 0L) {
-                dataStoreManager.setFirstRunTimestamp(System.currentTimeMillis())
-            }
-        }
-
         // Enqueue the ContentUriTrigger worker
         enqueueContentUriWorker()
 
@@ -49,7 +41,7 @@ class WorkManagerInitializer @Inject constructor(
         // Use ExistingWorkPolicy.REPLACE to ensure a new worker is always enqueued
         workManager.enqueueUniqueWork(
             "EventContentUriWork",
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
             contentUriWorkRequest
         )
     }

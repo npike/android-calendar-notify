@@ -1,6 +1,7 @@
 package net.npike.android.calendarnotify
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -21,6 +22,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import net.npike.android.calendarnotify.ui.screen.CalendarScreen
 import net.npike.android.calendarnotify.ui.screen.CalendarScreenViewModel
+import net.npike.android.calendarnotify.ui.screen.InitialSetupScreen
 import net.npike.android.calendarnotify.ui.screen.PermissionRationaleScreen
 import net.npike.android.calendarnotify.ui.theme.CalendarNotifyTheme
 
@@ -61,13 +63,31 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (permissionsGranted) {
-                    val viewModel: CalendarScreenViewModel = hiltViewModel()
-                    LaunchedEffect(Unit) {
-                        viewModel.loadCalendars()
+                    val calendarScreenViewModel: CalendarScreenViewModel = hiltViewModel()
+                    val setupUiState by calendarScreenViewModel.setupUiState.collectAsState()
+
+                    LaunchedEffect(permissionsGranted) {
+                        if (permissionsGranted) {
+                            calendarScreenViewModel.startInitialSetup()
+                        }
                     }
-                    val calendars by viewModel.calendars.collectAsState()
-                    CalendarScreen(calendars = calendars) { calendar, isMonitored ->
-                        viewModel.onCalendarToggled(calendar, isMonitored)
+
+                    when (setupUiState) {
+                        CalendarScreenViewModel.SetupUiState.Complete -> {
+                            LaunchedEffect(Unit) {
+                                calendarScreenViewModel.loadCalendars()
+                            }
+                            val calendars by calendarScreenViewModel.calendars.collectAsState()
+                            CalendarScreen(calendars = calendars) { calendar, isMonitored ->
+                                calendarScreenViewModel.onCalendarToggled(calendar, isMonitored)
+                            }
+                        }
+                        else -> {
+                            InitialSetupScreen(
+                                uiState = setupUiState,
+                                onSetupComplete = { /* Handled by ViewModel state */ }
+                            )
+                        }
                     }
                 } else {
                     PermissionRationaleScreen {

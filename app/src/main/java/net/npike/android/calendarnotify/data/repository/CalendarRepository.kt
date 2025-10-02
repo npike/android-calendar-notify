@@ -2,17 +2,18 @@ package net.npike.android.calendarnotify.data.repository
 
 import android.content.ContentResolver
 import android.content.ContentUris
-import android.database.ContentObserver
-import android.net.Uri
 import android.provider.CalendarContract
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import net.npike.android.calendarnotify.data.local.CalendarDao
-import net.npike.android.calendarnotify.data.local.CalendarEntity
-import net.npike.android.calendarnotify.domain.model.Event
+import net.npike.android.calendarnotify.data.local.DataStoreManager
+import net.npike.android.calendarnotify.data.local.EventDao
+import net.npike.android.calendarnotify.data.local.EventEntity
+import net.npike.android.calendarnotify.domain.model.Calendar
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,7 +26,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 class CalendarRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val contentResolver: ContentResolver,
-    private val calendarDao: CalendarDao
+    private val eventDao: EventDao,
+    private val dataStoreManager: DataStoreManager
 ) {
 
     private fun hasReadCalendarPermission(): Boolean {
@@ -35,29 +37,19 @@ class CalendarRepository @Inject constructor(
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    private val _systemCalendars = MutableStateFlow<List<CalendarEntity>>(emptyList())
-    val systemCalendars: Flow<List<CalendarEntity>> = _systemCalendars.asStateFlow()
-
-    private val calendarObserver = object : ContentObserver(null) {
-        override fun onChange(selfChange: Boolean, uri: Uri?) {
-            super.onChange(selfChange, uri)
-            // Trigger a refresh of system calendars
-            // This will be handled by WorkManager in a separate task
+    fun getSystemCalendars(): Flow<List<Calendar>> = combine(
+        flow { emit(querySystemCalendars()) },
+        dataStoreManager.unmonitoredCalendarIds
+    ) { systemCalendars: List<Calendar>, unmonitoredIds: Set<String> ->
+        systemCalendars.map { calendar ->
+            calendar.copy(isMonitored = calendar.id !in unmonitoredIds)
         }
     }
 
-    fun startObservingCalendarChanges() {
-        if (!hasReadCalendarPermission()) return
-        contentResolver.registerContentObserver(
-            CalendarContract.Calendars.CONTENT_URI,
-            true,
-            calendarObserver
-        )
-    }
-
-    suspend fun fetchAndStoreSystemCalendars() {
-        if (!hasReadCalendarPermission()) return
-        withContext(Dispatchers.IO) {
+    private suspend fun querySystemCalendars(): List<Calendar> {
+        if (!hasReadCalendarPermission()) return emptyList()
+        return withContext(Dispatchers.IO) {
+            val calendars = mutableListOf<Calendar>()
             val projection = arrayOf(
                 CalendarContract.Calendars._ID,
                 CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
@@ -74,131 +66,102 @@ class CalendarRepository @Inject constructor(
             )
 
             cursor?.use {
-                val calendars = mutableListOf<CalendarEntity>()
                 while (it.moveToNext()) {
                     val id = it.getString(it.getColumnIndexOrThrow(CalendarContract.Calendars._ID))
                     val name = it.getString(it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME))
                     val color = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_COLOR))
                     val isPrimary = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Calendars.IS_PRIMARY)) == 1
 
-
-                    // Check if calendar already exists in local DB to preserve isMonitored status
-                    val existingCalendar = calendarDao.getCalendarById(id)
                     calendars.add(
-                        CalendarEntity(
+                        Calendar(
                             id = id,
                             name = name,
                             color = color,
-                            isMonitored = existingCalendar?.isMonitored ?: !isPrimary
+                            isMonitored = true // Default to monitored, will be overridden by DataStore
                         )
                     )
                 }
-                calendarDao.insertAll(calendars) // Assuming insertAll is added to CalendarDao
-                _systemCalendars.value = calendars
             }
+            calendars
         }
     }
 
     suspend fun updateCalendarMonitoring(calendarId: String, isMonitored: Boolean) {
-        withContext(Dispatchers.IO) {
-            calendarDao.getCalendarById(calendarId)?.let {
-                calendarDao.updateCalendar(it.copy(isMonitored = isMonitored))
+        dataStoreManager.unmonitoredCalendarIds.first().let { currentUnmonitoredIds: Set<String> ->
+            val newUnmonitoredIds = if (isMonitored) {
+                currentUnmonitoredIds - calendarId
+            } else {
+                currentUnmonitoredIds + calendarId
             }
+            dataStoreManager.setUnmonitoredCalendarIds(newUnmonitoredIds)
         }
     }
 
-    fun getMonitoredCalendars(): Flow<List<CalendarEntity>> {
-        return calendarDao.getAllCalendars()
-    }
-
-    suspend fun getEventsForCalendar(calendarId: String, calendarName: String, startTime: Long, endTime: Long, minLastDate: Long): List<Event> {
+    suspend fun getEventsFromCalendarProvider(calendarId: String, startTime: Long, endTime: Long): List<EventEntity> {
         if (!hasReadCalendarPermission()) return emptyList()
-        val events = mutableListOf<Event>()
-        val uriBuilder = CalendarContract.Instances.CONTENT_URI.buildUpon()
-        ContentUris.appendId(uriBuilder, startTime)
-        ContentUris.appendId(uriBuilder, endTime)
-        val uri = uriBuilder.build()
+        return withContext(Dispatchers.IO) {
+            val events = mutableListOf<EventEntity>()
+            val builder = CalendarContract.Instances.CONTENT_URI.buildUpon()
+            ContentUris.appendId(builder, startTime)
+            ContentUris.appendId(builder, endTime)
+            val uri = builder.build()
 
-        val projection = arrayOf(
-            CalendarContract.Instances.EVENT_ID,
-            CalendarContract.Instances.TITLE,
-            CalendarContract.Instances.BEGIN,
-            CalendarContract.Instances.END,
-            CalendarContract.Instances.CALENDAR_ID,
-            CalendarContract.Instances.EVENT_LOCATION,
-            CalendarContract.Instances.ALL_DAY
-        )
+            val projection = arrayOf(
+                CalendarContract.Instances.EVENT_ID,
+                CalendarContract.Instances.TITLE,
+                CalendarContract.Instances.BEGIN,
+                CalendarContract.Instances.END,
+                CalendarContract.Instances.CALENDAR_ID,
+                CalendarContract.Instances.EVENT_LOCATION,
+                CalendarContract.Instances.ALL_DAY
+            )
 
-        val selection = "${CalendarContract.Instances.CALENDAR_ID} = ?"
-        val selectionArgs = arrayOf(calendarId)
+            val selection = "${CalendarContract.Instances.CALENDAR_ID} = ?"
+            val selectionArgs = arrayOf(calendarId)
 
-        val cursor = contentResolver.query(
-            uri,
-            projection,
-            selection,
-            selectionArgs,
-            null
-        )
+            val cursor = contentResolver.query(
+                uri,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )
 
-        val eventIds = mutableListOf<String>()
-        val eventsFromInstances = mutableListOf<Event>()
+            cursor?.use {
+                while (it.moveToNext()) {
+                    val eventId = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID)).toString()
+                    val title = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.TITLE))
+                    val begin = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN))
+                    val end = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.END))
+                    val eventLocation = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_LOCATION))
+                    val allDay = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Instances.ALL_DAY)) == 1
 
-        cursor?.use {
-            while (it.moveToNext()) {
-                val eventId = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID))
-                eventIds.add(eventId)
-                eventsFromInstances.add(
-                    Event(
-                        id = eventId,
-                        calendarId = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.CALENDAR_ID)),
-                        calendarName = calendarName,
-                        title = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.TITLE)),
-                        startTime = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN)),
-                        endTime = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.END)),
-                        isSeen = false,
-                        location = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_LOCATION)),
-                        isAllDay = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Instances.ALL_DAY)) == 1,
-                        lastDate = 0 // placeholder
+                    events.add(
+                        EventEntity(
+                            id = eventId,
+                            calendarId = calendarId,
+                            title = title,
+                            startTime = begin,
+                            endTime = end,
+                            isSeen = false, // Default to false when fetching
+                            location = eventLocation,
+                            isAllDay = allDay,
+                            lastDate = 0L // Placeholder, as lastDate is not directly from Instances
+                        )
                     )
-                )
+                }
+            }
+            events
+        }
+    }
+
+    suspend fun updateEventSeenStatus(eventId: String, isSeen: Boolean) {
+        withContext(Dispatchers.IO) {
+            try {
+                eventDao.updateEventSeenStatus(eventId, isSeen)
+            } catch (e: Exception) {
+                Timber.e(e, "Error updating event seen status in database.")
             }
         }
-
-        if (eventIds.isEmpty()) {
-            return emptyList()
-        }
-
-        val eventDtStampMap = mutableMapOf<String, Long>()
-        val eventsProjection = arrayOf(
-            CalendarContract.Events._ID,
-            "dtstamp"
-        )
-        val eventsSelection = "${CalendarContract.Events._ID} IN (${eventIds.joinToString(separator = ",") { "?" }})"
-        val eventsSelectionArgs = eventIds.toTypedArray()
-
-        val eventsCursor = contentResolver.query(
-            CalendarContract.Events.CONTENT_URI,
-            eventsProjection,
-            eventsSelection,
-            eventsSelectionArgs,
-            null
-        )
-
-        eventsCursor?.use {
-            while (it.moveToNext()) {
-                val eventId = it.getString(it.getColumnIndexOrThrow(CalendarContract.Events._ID))
-                val dtstamp = it.getLong(it.getColumnIndexOrThrow("dtstamp"))
-                eventDtStampMap[eventId] = dtstamp
-            }
-        }
-
-        for (event in eventsFromInstances) {
-            val dtstamp = eventDtStampMap[event.id]
-            if (dtstamp != null && dtstamp > minLastDate) {
-                events.add(event.copy(lastDate = dtstamp))
-            }
-        }
-
-        return events
     }
 }
