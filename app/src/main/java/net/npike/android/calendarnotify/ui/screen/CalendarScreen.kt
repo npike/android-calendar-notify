@@ -58,11 +58,21 @@ fun CalendarItem(calendar: Calendar, onToggle: (Boolean) -> Unit) {
                     .background(Color(calendar.color))
             )
             Spacer(modifier = Modifier.width(16.dp))
-            Text(text = calendar.name, style = MaterialTheme.typography.bodyLarge)
+            Column {
+                Text(text = calendar.name, style = MaterialTheme.typography.bodyLarge)
+                if (!calendar.isSynced) {
+                    Text(
+                        text = "This calendar is not currently being synced",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
         Switch(
             checked = calendar.isMonitored,
-            onCheckedChange = onToggle
+            onCheckedChange = onToggle,
+            enabled = calendar.isSynced
         )
     }
 }
@@ -71,7 +81,7 @@ fun CalendarItem(calendar: Calendar, onToggle: (Boolean) -> Unit) {
 @Composable
 fun CalendarItemPreview() {
     CalendarNotifyTheme {
-        CalendarItem(calendar = Calendar("1", "Work Calendar", 0xFF0000, true)) {}
+        CalendarItem(calendar = Calendar("1", "Work Calendar", 0xFF0000, true, true)) {}
     }
 }
 
@@ -79,7 +89,7 @@ fun CalendarItemPreview() {
 @Composable
 fun CalendarItemDarkPreview() {
     CalendarNotifyTheme(darkTheme = true) {
-        CalendarItem(calendar = Calendar("1", "Work Calendar", 0xFF0000, true)) {}
+        CalendarItem(calendar = Calendar("1", "Work Calendar", 0xFF0000, true, false)) {}
     }
 }
 
@@ -88,8 +98,9 @@ fun CalendarItemDarkPreview() {
 fun CalendarScreenPreview() {
     CalendarNotifyTheme {
         CalendarScreen(calendars = listOf(
-            Calendar("1", "Work Calendar", 0xFF0000, true),
-            Calendar("2", "Personal Calendar", 0x00FF00, false)
+            Calendar("1", "Work Calendar", 0xFF0000, true, true),
+            Calendar("2", "Personal Calendar", 0x00FF00, false, true),
+            Calendar("3", "Not Synced", 0x0000FF, false, false)
         )) { _, _ -> }
     }
 }
@@ -99,8 +110,9 @@ fun CalendarScreenPreview() {
 fun CalendarScreenDarkPreview() {
     CalendarNotifyTheme(darkTheme = true) {
         CalendarScreen(calendars = listOf(
-            Calendar("1", "Work Calendar", 0xFF0000, true),
-            Calendar("2", "Personal Calendar", 0x00FF00, false)
+            Calendar("1", "Work Calendar", 0xFF0000, true, true),
+            Calendar("2", "Personal Calendar", 0x00FF00, false, true),
+            Calendar("3", "Not Synced", 0x0000FF, false, false)
         )) { _, _ -> }
     }
 }

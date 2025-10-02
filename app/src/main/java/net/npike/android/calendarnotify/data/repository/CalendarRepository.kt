@@ -52,15 +52,17 @@ class CalendarRepository @Inject constructor(
                 CalendarContract.Calendars._ID,
                 CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
                 CalendarContract.Calendars.CALENDAR_COLOR,
-                CalendarContract.Calendars.IS_PRIMARY
+                CalendarContract.Calendars.IS_PRIMARY,
+                CalendarContract.Calendars.SYNC_EVENTS
             )
 
+            val sortOrder = "${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} COLLATE NOCASE ASC"
             val cursor = contentResolver.query(
                 CalendarContract.Calendars.CONTENT_URI,
                 projection,
                 null,
                 null,
-                null
+                sortOrder
             )
 
             cursor?.use {
@@ -69,13 +71,15 @@ class CalendarRepository @Inject constructor(
                     val name = it.getString(it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME))
                     val color = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_COLOR))
                     val isPrimary = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Calendars.IS_PRIMARY)) == 1
+                    val isSynced = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Calendars.SYNC_EVENTS)) == 1
 
                     calendars.add(
                         Calendar(
                             id = id,
                             name = name,
                             color = color,
-                            isMonitored = true // Default to monitored, will be overridden by DataStore
+                            isMonitored = isSynced, // Default to monitored if synced
+                            isSynced = isSynced
                         )
                     )
                 }

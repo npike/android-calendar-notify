@@ -8,6 +8,8 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.flow.first
+import net.npike.android.calendarnotify.data.local.DataStoreManager
 import net.npike.android.calendarnotify.domain.usecase.PrepopulateEventsUseCase
 import timber.log.Timber
 import java.util.Calendar
@@ -16,11 +18,17 @@ import java.util.Calendar
 class FirstRunWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
-    private val prepopulateEventsUseCase: PrepopulateEventsUseCase
+    private val prepopulateEventsUseCase: PrepopulateEventsUseCase,
+    private val dataStoreManager: DataStoreManager
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
         Timber.d("FirstRunWorker started.")
+
+        if (dataStoreManager.lastKnownEventId.first() != 0L) {
+            Timber.d("FirstRunWorker already ran. Skipping.")
+            return Result.success()
+        }
 
         if (ContextCompat.checkSelfPermission(
                 applicationContext,

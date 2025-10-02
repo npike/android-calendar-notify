@@ -33,7 +33,7 @@ class CheckForNewEventsUseCase @Inject constructor(
 
             eventsFromProvider.forEach { event ->
                 // This is a new event, show notification
-                notificationHelper.showNewEventNotification(event.copy(calendarName = calendar.name))
+                notificationHelper.showNewEventNotification(event.copy(calendarName = calendar.name, calendarColor = calendar.color))
 
                 // Update highest event ID
                 event.id.toLongOrNull()?.let {

@@ -55,31 +55,33 @@ When creating this spec from a user prompt:
 ## User Scenarios & Testing *(mandatory)*
 
 ### Primary User Story
-As a new user, after granting calendar permissions, I want the app to perform an initial setup by fetching all upcoming calendar events and marking them as seen, so that I don't miss any important events. During this setup, I want to be informed of the progress, even if the app is in the background.
+As a new user, after granting calendar permissions, I want the app to perform an initial setup by identifying the highest existing calendar event ID and persisting it, so that subsequent runs can detect only truly new events. During this setup, I want to be informed of the progress, even if the app is in the background. I also want to be able to monitor only calendars that are currently synced to my device, and see a clear indication for those that are not.
 
 ### Acceptance Scenarios
 1. **Given** the app is launched for the first time and calendar permissions are granted, **When** the app starts the initial setup, **Then** a setup screen is displayed.
 2. **Given** the initial setup is in progress, **When** the app is put into the background, **Then** a non-dismissible notification indicating setup progress is shown.
-3. **Given** the initial setup is complete, **When** the app fetches events, **Then** all events between now and one year from now are fetched and marked as "seen" internally.
+3. **Given** the initial setup is complete, **When** the app fetches events, **Then** the highest existing calendar event ID is identified and persisted.
 4. **Given** the initial setup is complete, **When** the app is launched again, **Then** the app does not perform the initial setup again.
+5. **Given** a calendar is not synced to the device, **When** the user views the calendar list, **Then** the monitoring switch for that calendar is disabled and a subtitle "This calendar is not currently being synced" is displayed.
+6. **Given** a calendar is synced to the device, **When** the user views the calendar list, **Then** the monitoring switch for that calendar is enabled and on by default.
+7. **Given** the calendar list is displayed, **When** the user views the list, **Then** the calendars are sorted alphabetically by name, case-insensitive.
 
 ### Edge Cases
 - What happens if calendar permissions are revoked during setup? The app should stop setup and prompt the user to re-grant permissions.
-- What happens if there are no events in the next year? The setup should still complete successfully.
-- What happens if the device runs out of storage during event marking? Ignore storage issues.
+- What happens if there are no events in the calendar provider during initial setup? The highest event ID should be persisted as 0.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 - **FR-001**: The app MUST display a dedicated "setup in progress" screen on first launch after calendar permissions are granted.
 - **FR-002**: The app MUST display a non-dismissible notification when the initial setup is running in the background.
-- **FR-003**: The app MUST fetch all calendar events from the current date up to one year in the future during the initial setup.
-- **FR-004**: The app MUST internally mark all fetched events during initial setup as "seen".
-- **FR-005**: The app MUST NOT re-run the initial setup process after it has been successfully completed once.
-- **FR-006**: The app MUST no longer need to keep track of the first run time.
-- **FR-007**: The app MUST handle cases where no events are found during the initial setup.
-- **FR-008**: The app MUST stop setup and prompt the user to re-grant permissions if calendar permissions are revoked during setup.
-- **FR-009**: The app MUST ignore storage issues during event marking.
+- **FR-003**: The app MUST identify and persist the highest existing calendar event ID from the calendar provider during initial setup.
+- **FR-004**: The app MUST NOT re-run the initial setup process after it has been successfully completed once.
+- **FR-005**: The app MUST stop setup and prompt the user to re-grant permissions if calendar permissions are revoked during setup.
+- **FR-006**: The app MUST disable the monitoring switch and display "This calendar is not currently being synced" for calendars not synced to the device.
+- **FR-007**: The app MUST enable the monitoring switch and set it to on by default for calendars synced to the device.
+- **FR-008**: The app MUST sort the calendar list alphabetically by name, case-insensitive.
+- **FR-009**: The app MUST use the calendar's color for the notification icon when showing new event notifications.
 
 ## Clarifications
 ### Session 2025-09-30
@@ -87,8 +89,9 @@ As a new user, after granting calendar permissions, I want the app to perform an
 - Q: How should the app handle storage issues during event marking? → A: Ignore storage issues.
 
 ### Key Entities *(include if feature involves data)*
-- **Event**: Represents a calendar event with properties like title, start time, end time, and a new internal "seen" status.
+- **Event**: Represents a calendar event with properties like title, start time, end time, and a new internal "seen" status, and calendar color.
 - **Setup Status**: A persistent indicator that tracks whether the initial setup has been completed.
+- **Last Known Event ID**: A persistent indicator that stores the highest event ID seen during initial setup.
 
 ---
 

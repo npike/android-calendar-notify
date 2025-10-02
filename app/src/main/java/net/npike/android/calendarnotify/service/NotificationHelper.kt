@@ -86,6 +86,7 @@ class NotificationHelper @Inject constructor(
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent) // Set the PendingIntent
             .setAutoCancel(true) // Automatically removes the notification when the user taps it
+            .setColor(event.calendarColor)
 
         with(NotificationManagerCompat.from(context)) {
             notify(event.id.hashCode(), builder.build())

@@ -62,6 +62,7 @@ class CalendarScreenViewModel @Inject constructor(
     }
 
     fun onCalendarToggled(calendar: Calendar, isMonitored: Boolean) {
+        if (!calendar.isSynced) return
         viewModelScope.launch {
             calendarRepository.updateCalendarMonitoring(calendar.id, isMonitored)
         }

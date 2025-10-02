@@ -11,4 +11,5 @@ data class Event(
     val location: String?,
     val isAllDay: Boolean,
     val lastDate: Long,
+    val calendarColor: Int = 0
 )

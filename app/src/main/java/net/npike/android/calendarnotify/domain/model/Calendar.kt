@@ -4,5 +4,6 @@ data class Calendar(
     val id: String,
     val name: String,
     val color: Int,
-    val isMonitored: Boolean
+    val isMonitored: Boolean,
+    val isSynced: Boolean
 )
