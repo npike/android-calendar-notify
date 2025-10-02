@@ -1,146 +1,109 @@
 package net.npike.android.calendarnotify.data.repository
 
-import android.content.Context
 import android.content.ContentResolver
-import android.database.ContentObserver
-import android.os.Handler
-import android.os.Looper
+import android.content.Context
+import android.content.pm.PackageManager
+import android.database.MatrixCursor
 import android.provider.CalendarContract
-import io.mockk.*
+import androidx.test.core.app.ApplicationProvider
+import androidx.core.content.ContextCompat
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
-import net.npike.android.calendarnotify.data.local.CalendarDao
-import net.npike.android.calendarnotify.data.local.CalendarEntity
-import net.npike.android.calendarnotify.data.local.EventDao
+import net.npike.android.calendarnotify.data.local.DataStoreManager
+import net.npike.android.calendarnotify.domain.model.Event
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
-import org.junit.Assert.*
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(AndroidJUnit4::class)
 class CalendarRepositoryTest {
 
-    private val mockContext = mockk<Context>()
-    private val mockContentResolver = mockk<ContentResolver>()
-    private val mockCalendarDao = mockk<CalendarDao>()
-    private val mockEventDao = mockk<EventDao>()
     private lateinit var repository: CalendarRepository
+    private val mockContentResolver: ContentResolver = mockk(relaxed = true)
+    private val mockDataStoreManager: DataStoreManager = mockk(relaxed = true)
+    private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Before
     fun setup() {
-        clearAllMocks()
-        // Mock the registerContentObserver call to prevent ContentObserver from being instantiated
-        every { mockContentResolver.registerContentObserver(any(), any(), any()) } just Runs
-        repository = CalendarRepository(mockContext, mockContentResolver, mockCalendarDao, mockEventDao)
+        mockkStatic(ContextCompat::class)
+        every { ContextCompat.checkSelfPermission(any(), any()) } returns PackageManager.PERMISSION_GRANTED
+
+        repository = CalendarRepository(
+            context = context,
+            contentResolver = mockContentResolver,
+            dataStoreManager = mockDataStoreManager
+        )
     }
 
     @Test
-    fun `fetchAndStoreSystemCalendars inserts new calendars`() = runBlocking {
-        val systemCalendars = listOf(
-            CalendarEntity("1", "Work", 0xFF0000, true),
-            CalendarEntity("2", "Personal", 0x00FF00, true)
-        )
-
-        coEvery { mockCalendarDao.getCalendarById(any<String>()) } returns null
-        coEvery { mockCalendarDao.insertAll(any()) } just Runs
-
-        // Mock cursor for contentResolver.query
-        val mockCursor = mockk<android.database.Cursor>()
-        every { mockCursor.moveToNext() } returnsMany listOf(true, true, false)
-        every { mockCursor.getString(0) } returns "1" andThen "2"
-        every { mockCursor.getString(1) } returns "Work" andThen "Personal"
-        every { mockCursor.getInt(2) } returns 0xFF0000 andThen 0x00FF00 // Mock CALENDAR_COLOR
-        every { mockCursor.getInt(3) } returns 0 andThen 0 // Mock IS_PRIMARY
-        every { mockCursor.getColumnIndexOrThrow(any()) } answers {
-            when (arg<String>(0)) {
-                CalendarContract.Calendars._ID -> 0
-                CalendarContract.Calendars.CALENDAR_DISPLAY_NAME -> 1
-                CalendarContract.Calendars.CALENDAR_COLOR -> 2
-                CalendarContract.Calendars.IS_PRIMARY -> 3
-                else -> throw IllegalArgumentException("Unknown column")
-            }
+    fun `getSystemCalendars applies unmonitored IDs from DataStore`() = runBlocking {
+        // Arrange
+        val calendarsCursor = MatrixCursor(arrayOf(
+            CalendarContract.Calendars._ID,
+            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Calendars.CALENDAR_COLOR,
+            CalendarContract.Calendars.IS_PRIMARY
+        )).apply {
+            addRow(arrayOf("1", "Personal", -1, 1))
+            addRow(arrayOf("2", "Work", -1, 0))
         }
-        every { mockCursor.close() } just Runs
+        every { mockContentResolver.query(any(), any(), any(), any(), any()) } returns calendarsCursor
+        coEvery { mockDataStoreManager.unmonitoredCalendarIds } returns flowOf(setOf("2"))
 
-        every { mockContentResolver.query(any(), any(), any(), any(), any()) } returns mockCursor
+        // Act
+        val calendars = repository.getSystemCalendars().first()
 
-        repository.fetchAndStoreSystemCalendars()
-
-        coVerify { mockCalendarDao.insertAll(match { it.size == 2 }) }
+        // Assert
+        assertEquals(2, calendars.size)
+        assertEquals(true, calendars.find { it.id == "1" }?.isMonitored)
+        assertEquals(false, calendars.find { it.id == "2" }?.isMonitored)
     }
 
     @Test
-    fun `updateCalendarMonitoring updates calendar in database`() = runBlocking {
-        val existingCalendar = CalendarEntity("1", "Work", 0xFF0000, true)
-        coEvery { mockCalendarDao.getCalendarById("1") } returns existingCalendar
-        coEvery { mockCalendarDao.updateCalendar(any()) } just Runs
+    fun `getHighestEventId returns the highest event ID`() = runBlocking {
+        // Arrange
+        val eventsCursor = MatrixCursor(arrayOf(CalendarContract.Events._ID)).apply {
+            addRow(arrayOf(100L))
+            addRow(arrayOf(99L))
+        }
+        every { mockContentResolver.query(any(), any(), any(), any(), any()) } returns eventsCursor
 
-        repository.updateCalendarMonitoring("1", false)
+        // Act
+        val highestId = repository.getHighestEventId()
 
-        coVerify { mockCalendarDao.updateCalendar(existingCalendar.copy(isMonitored = false)) }
+        // Assert
+        assertEquals(100L, highestId)
     }
 
     @Test
-    fun `getMonitoredCalendars returns flow from dao`() = runBlocking {
-        val calendarsFlow = flowOf(
-            listOf(
-                CalendarEntity("1", "Work", 0xFF0000, true)
-            )
-        )
-        every { mockCalendarDao.getAllCalendars() } returns calendarsFlow
+    fun `getEventsFromCalendarProviderSinceEventId queries for events with ID greater than lastEventId`() = runBlocking {
+        // Arrange
+        val eventsCursor = MatrixCursor(arrayOf(
+            CalendarContract.Events._ID,
+            CalendarContract.Events.TITLE,
+            CalendarContract.Events.DTSTART,
+            CalendarContract.Events.DTEND,
+            CalendarContract.Events.CALENDAR_ID,
+            CalendarContract.Events.EVENT_LOCATION,
+            CalendarContract.Events.ALL_DAY,
+            CalendarContract.Events.LAST_DATE
+        )).apply {
+            addRow(arrayOf(101L, "New Event", 0L, 0L, "1", "Location", 0, 0L))
+        }
+        every { mockContentResolver.query(any(), any(), any(), any(), any()) } returns eventsCursor
 
-        val result = repository.getMonitoredCalendars().first()
+        // Act
+        val events = repository.getEventsFromCalendarProviderSinceEventId("1", 100L)
 
-        assertEquals(1, result.size)
-        assertEquals("Work", result.first().name)
-    }
-
-    @Test
-    fun `fetchAndStoreEventsForCalendar fetches and stores events`() = runBlocking {
-        val calendarId = "1"
-        val startMillis = 1672531200000L // Jan 1, 2023
-        val endMillis = 1704067200000L // Jan 1, 2024
-
-        val mockCursor = mockk<android.database.Cursor>()
-        every { mockCursor.moveToNext() } returnsMany listOf(true, false)
-        every { mockCursor.getLong(any()) } returns 1L // Event ID
-        every { mockCursor.getString(any()) } returns "Test Event" // Title
-        every { mockCursor.getLong(any()) } returns startMillis // Begin
-        every { mockCursor.getLong(any()) } returns endMillis // End
-        every { mockCursor.getInt(any()) } returns 0 // All Day
-        every { mockCursor.getString(any()) } returns "Location" // Event Location
-        every { mockCursor.getColumnIndexOrThrow(CalendarContract.Instances._ID) } returns 0
-        every { mockCursor.getColumnIndexOrThrow(CalendarContract.Instances.TITLE) } returns 1
-        every { mockCursor.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN) } returns 2
-        every { mockCursor.getColumnIndexOrThrow(CalendarContract.Instances.END) } returns 3
-        every { mockCursor.getColumnIndexOrThrow(CalendarContract.Instances.ALL_DAY) } returns 4
-        every { mockCursor.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_LOCATION) } returns 5
-        every { mockCursor.close() } just Runs
-
-        every {
-            mockContentResolver.query(
-                any(),
-                any(),
-                any(),
-                any(),
-                any()
-            )
-        } returns mockCursor
-
-        coEvery { mockEventDao.insertEvent(any()) } just Runs
-
-        repository.fetchAndStoreEventsForCalendar(calendarId, startMillis, endMillis)
-
-        coVerify { mockEventDao.insertEvent(any()) }
-    }
-
-    @Test
-    fun `updateEventSeenStatus updates event in database`() = runBlocking {
-        val eventId = 1L
-        val isSeen = true
-        coEvery { mockEventDao.updateEventSeenStatus(eventId, isSeen) } just Runs
-
-        repository.updateEventSeenStatus(eventId, isSeen)
-
-        coVerify { mockEventDao.updateEventSeenStatus(eventId, isSeen) }
+        // Assert
+        assertEquals(1, events.size)
+        assertEquals("101", events.first().id)
     }
 }

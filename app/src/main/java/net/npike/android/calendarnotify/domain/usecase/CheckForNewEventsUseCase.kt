@@ -1,7 +1,6 @@
 package net.npike.android.calendarnotify.domain.usecase
 
 import kotlinx.coroutines.flow.first
-import net.npike.android.calendarnotify.data.local.EventDao
 import net.npike.android.calendarnotify.data.local.DataStoreManager
 import net.npike.android.calendarnotify.data.repository.CalendarRepository
 import net.npike.android.calendarnotify.domain.model.Event
@@ -12,7 +11,6 @@ import javax.inject.Inject
 
 class CheckForNewEventsUseCase @Inject constructor(
     private val calendarRepository: CalendarRepository,
-    private val eventDao: EventDao,
     private val dataStoreManager: DataStoreManager,
     private val notificationHelper: NotificationHelper
 ) {
@@ -22,43 +20,33 @@ class CheckForNewEventsUseCase @Inject constructor(
             .filter { it.isMonitored }
         Timber.d("Found ${monitoredCalendars.size} monitored calendars.")
 
-        val now = Calendar.getInstance()
-        val oneYearFromNow = Calendar.getInstance().apply { add(Calendar.YEAR, 1) }
+        val lastKnownEventId = dataStoreManager.lastKnownEventId.first()
+        var highestEventId = lastKnownEventId
 
         monitoredCalendars.forEach { calendar ->
-            Timber.d("Checking for events in calendar: ${calendar.name}")
+            Timber.d("Checking for events in calendar: ${calendar.name} since event ID $lastKnownEventId")
 
-            val eventsFromProvider = calendarRepository.getEventsFromCalendarProvider(
+            val eventsFromProvider = calendarRepository.getEventsFromCalendarProviderSinceEventId(
                 calendar.id,
-                now.timeInMillis,
-                oneYearFromNow.timeInMillis
+                lastKnownEventId
             )
 
-            val localEvents = eventDao.getAllEvents().first() ?: emptyList()
-            val localEventIds = localEvents.map { it.id }.toSet()
+            eventsFromProvider.forEach { event ->
+                // This is a new event, show notification
+                notificationHelper.showNewEventNotification(event.copy(calendarName = calendar.name))
 
-            eventsFromProvider.forEach { eventEntity ->
-                if (eventEntity.id !in localEventIds) {
-                    // This is a new event, insert it and show notification
-                    eventDao.insertEvent(eventEntity)
-                    // Convert EventEntity to domain.model.Event for notification
-                    val domainEvent = Event(
-                        id = eventEntity.id,
-                        calendarId = eventEntity.calendarId,
-                        calendarName = calendar.name, // Use calendar name from monitoredCalendars
-                        title = eventEntity.title,
-                        startTime = eventEntity.startTime,
-                        endTime = eventEntity.endTime,
-                        isSeen = eventEntity.isSeen,
-                        location = eventEntity.location,
-                        isAllDay = eventEntity.isAllDay,
-                        lastDate = eventEntity.lastDate
-                    )
-                    notificationHelper.showNewEventNotification(domainEvent)
+                // Update highest event ID
+                event.id.toLongOrNull()?.let {
+                    if (it > highestEventId) {
+                        highestEventId = it
+                    }
                 }
-                // Mark event as seen after processing (or after notification is shown)
-                calendarRepository.updateEventSeenStatus(eventEntity.id, true)
             }
+        }
+
+        if (highestEventId > lastKnownEventId) {
+            dataStoreManager.setLastKnownEventId(highestEventId)
+            Timber.d("Updated last known event ID to $highestEventId")
         }
     }
 }

@@ -10,8 +10,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import net.npike.android.calendarnotify.data.local.DataStoreManager
-import net.npike.android.calendarnotify.data.local.EventDao
-import net.npike.android.calendarnotify.data.local.EventEntity
+import net.npike.android.calendarnotify.domain.model.Event
 import net.npike.android.calendarnotify.domain.model.Calendar
 import timber.log.Timber
 import javax.inject.Inject
@@ -26,7 +25,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 class CalendarRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val contentResolver: ContentResolver,
-    private val eventDao: EventDao,
     private val dataStoreManager: DataStoreManager
 ) {
 
@@ -97,27 +95,25 @@ class CalendarRepository @Inject constructor(
         }
     }
 
-    suspend fun getEventsFromCalendarProvider(calendarId: String, startTime: Long, endTime: Long): List<EventEntity> {
+    suspend fun getEventsFromCalendarProviderSinceEventId(calendarId: String, lastEventId: Long): List<Event> {
         if (!hasReadCalendarPermission()) return emptyList()
         return withContext(Dispatchers.IO) {
-            val events = mutableListOf<EventEntity>()
-            val builder = CalendarContract.Instances.CONTENT_URI.buildUpon()
-            ContentUris.appendId(builder, startTime)
-            ContentUris.appendId(builder, endTime)
-            val uri = builder.build()
+            val events = mutableListOf<Event>()
+            val uri = CalendarContract.Events.CONTENT_URI
 
             val projection = arrayOf(
-                CalendarContract.Instances.EVENT_ID,
-                CalendarContract.Instances.TITLE,
-                CalendarContract.Instances.BEGIN,
-                CalendarContract.Instances.END,
-                CalendarContract.Instances.CALENDAR_ID,
-                CalendarContract.Instances.EVENT_LOCATION,
-                CalendarContract.Instances.ALL_DAY
+                CalendarContract.Events._ID,
+                CalendarContract.Events.TITLE,
+                CalendarContract.Events.DTSTART,
+                CalendarContract.Events.DTEND,
+                CalendarContract.Events.CALENDAR_ID,
+                CalendarContract.Events.EVENT_LOCATION,
+                CalendarContract.Events.ALL_DAY,
+                CalendarContract.Events.LAST_DATE
             )
 
-            val selection = "${CalendarContract.Instances.CALENDAR_ID} = ?"
-            val selectionArgs = arrayOf(calendarId)
+            val selection = "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events._ID} > ?"
+            val selectionArgs = arrayOf(calendarId, lastEventId.toString())
 
             val cursor = contentResolver.query(
                 uri,
@@ -129,24 +125,26 @@ class CalendarRepository @Inject constructor(
 
             cursor?.use {
                 while (it.moveToNext()) {
-                    val eventId = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID)).toString()
-                    val title = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.TITLE))
-                    val begin = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN))
-                    val end = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.END))
-                    val eventLocation = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_LOCATION))
-                    val allDay = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Instances.ALL_DAY)) == 1
+                    val eventId = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events._ID))
+                    val title = it.getString(it.getColumnIndexOrThrow(CalendarContract.Events.TITLE))
+                    val begin = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.DTSTART))
+                    val end = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.DTEND))
+                    val eventLocation = it.getString(it.getColumnIndexOrThrow(CalendarContract.Events.EVENT_LOCATION))
+                    val allDay = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Events.ALL_DAY)) == 1
+                    val lastDate = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.LAST_DATE))
 
                     events.add(
-                        EventEntity(
-                            id = eventId,
+                        Event(
+                            id = eventId.toString(),
                             calendarId = calendarId,
+                            calendarName = "", // This will be filled in by the use case
                             title = title,
                             startTime = begin,
                             endTime = end,
                             isSeen = false, // Default to false when fetching
                             location = eventLocation,
                             isAllDay = allDay,
-                            lastDate = 0L // Placeholder, as lastDate is not directly from Instances
+                            lastDate = lastDate
                         )
                     )
                 }
@@ -155,13 +153,28 @@ class CalendarRepository @Inject constructor(
         }
     }
 
-    suspend fun updateEventSeenStatus(eventId: String, isSeen: Boolean) {
-        withContext(Dispatchers.IO) {
-            try {
-                eventDao.updateEventSeenStatus(eventId, isSeen)
-            } catch (e: Exception) {
-                Timber.e(e, "Error updating event seen status in database.")
+    suspend fun getHighestEventId(): Long {
+        if (!hasReadCalendarPermission()) return 0L
+        return withContext(Dispatchers.IO) {
+            var highestEventId = 0L
+            val uri = CalendarContract.Events.CONTENT_URI
+            val projection = arrayOf(CalendarContract.Events._ID)
+            val sortOrder = "${CalendarContract.Events._ID} DESC"
+
+            val cursor = contentResolver.query(
+                uri,
+                projection,
+                null,
+                null,
+                sortOrder
+            )
+
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    highestEventId = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events._ID))
+                }
             }
+            highestEventId
         }
     }
 }

@@ -5,56 +5,55 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
-import io.mockk.MockKAnnotations
 import io.mockk.coEvery
-import io.mockk.impl.annotations.MockK
+import io.mockk.coVerify
+import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
-import net.npike.android.calendarnotify.data.repository.CalendarRepository
+import net.npike.android.calendarnotify.domain.usecase.CheckForNewEventsUseCase
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import org.junit.Assert.assertTrue
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(AndroidJUnit4::class)
 class EventWorkerTest {
 
-    @MockK
-    lateinit var mockCalendarRepository: CalendarRepository
-
-    @MockK
-    lateinit var mockNotificationHelper: NotificationHelper
-
+    private val mockCheckForNewEventsUseCase: CheckForNewEventsUseCase = mockk(relaxed = true)
+    private val mockWorkManagerInitializer: WorkManagerInitializer = mockk(relaxed = true)
     private lateinit var context: Context
 
     @Before
     fun setup() {
-        MockKAnnotations.init(this)
         context = androidx.test.core.app.ApplicationProvider.getApplicationContext()
-
-        // Mock the behavior of the repository and notification helper
-        coEvery { mockCalendarRepository.fetchAndStoreEventsForCalendar(any(), any(), any()) } returns Unit
-        coEvery { mockCalendarRepository.updateEventSeenStatus(any(), any()) } returns Unit
-        coEvery { mockNotificationHelper.createForegroundServiceNotification() } returns mockk()
     }
 
     @Test
-    fun `doWork returns Result success`() = runBlocking {
+    fun `doWork calls CheckForNewEventsUseCase and returns success`() = runBlocking {
+        // Arrange
+        coEvery { mockCheckForNewEventsUseCase.invoke() } returns Unit
         val worker = TestListenableWorkerBuilder<EventWorker>(context)
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(
                     appContext: Context,
                     workerClassName: String,
                     workerParameters: WorkerParameters
-                ): ListenableWorker? {
+                ): ListenableWorker {
                     return EventWorker(
                         appContext,
                         workerParameters,
-                        mockCalendarRepository,
-                        mockNotificationHelper
+                        mockCheckForNewEventsUseCase,
+                        mockWorkManagerInitializer
                     )
                 }
             })
             .build()
 
+        // Act
         val result = worker.doWork()
+
+        // Assert
+        coVerify(exactly = 1) { mockCheckForNewEventsUseCase.invoke() }
         assertTrue(result is ListenableWorker.Result.Success)
     }
 }

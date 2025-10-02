@@ -32,10 +32,7 @@ class FirstRunWorker @AssistedInject constructor(
         }
 
         return try {
-            val now = Calendar.getInstance()
-            val oneYearFromNow = Calendar.getInstance().apply { add(Calendar.YEAR, 1) }
-
-            prepopulateEventsUseCase(now.timeInMillis, oneYearFromNow.timeInMillis)
+            prepopulateEventsUseCase()
 
             Timber.d("FirstRunWorker finished successfully.")
             Result.success()
