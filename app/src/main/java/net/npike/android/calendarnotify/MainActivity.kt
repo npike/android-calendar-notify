@@ -2,6 +2,7 @@ package net.npike.android.calendarnotify
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,15 +34,33 @@ class MainActivity : ComponentActivity() {
         setContent {
             CalendarNotifyTheme {
                 val context = LocalContext.current
-                var permissionGranted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) }
-
-                val launcher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.RequestPermission()
-                ) { isGranted: Boolean ->
-                    permissionGranted = isGranted
+                val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    arrayOf(
+                        Manifest.permission.READ_CALENDAR,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    )
+                } else {
+                    arrayOf(Manifest.permission.READ_CALENDAR)
                 }
 
-                if (permissionGranted) {
+                var permissionsGranted by remember {
+                    mutableStateOf(
+                        permissions.all {
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                it
+                            ) == PackageManager.PERMISSION_GRANTED
+                        }
+                    )
+                }
+
+                val launcher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestMultiplePermissions()
+                ) { permissionsMap ->
+                    permissionsGranted = permissionsMap.values.all { it }
+                }
+
+                if (permissionsGranted) {
                     val viewModel: CalendarScreenViewModel = hiltViewModel()
                     LaunchedEffect(Unit) {
                         viewModel.loadCalendars()
@@ -52,7 +71,7 @@ class MainActivity : ComponentActivity() {
                     }
                 } else {
                     PermissionRationaleScreen {
-                        launcher.launch(Manifest.permission.READ_CALENDAR)
+                        launcher.launch(permissions)
                     }
                 }
             }

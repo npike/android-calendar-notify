@@ -61,7 +61,8 @@ class CalendarRepository @Inject constructor(
             val projection = arrayOf(
                 CalendarContract.Calendars._ID,
                 CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
-                CalendarContract.Calendars.CALENDAR_COLOR
+                CalendarContract.Calendars.CALENDAR_COLOR,
+                CalendarContract.Calendars.IS_PRIMARY
             )
 
             val cursor = contentResolver.query(
@@ -78,6 +79,8 @@ class CalendarRepository @Inject constructor(
                     val id = it.getString(it.getColumnIndexOrThrow(CalendarContract.Calendars._ID))
                     val name = it.getString(it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME))
                     val color = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_COLOR))
+                    val isPrimary = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Calendars.IS_PRIMARY)) == 1
+
 
                     // Check if calendar already exists in local DB to preserve isMonitored status
                     val existingCalendar = calendarDao.getCalendarById(id)
@@ -86,7 +89,7 @@ class CalendarRepository @Inject constructor(
                             id = id,
                             name = name,
                             color = color,
-                            isMonitored = existingCalendar?.isMonitored ?: true // Default to monitored if new
+                            isMonitored = existingCalendar?.isMonitored ?: !isPrimary
                         )
                     )
                 }
@@ -108,7 +111,7 @@ class CalendarRepository @Inject constructor(
         return calendarDao.getAllCalendars()
     }
 
-    suspend fun getEventsForCalendar(calendarId: String, startTime: Long, endTime: Long, minLastDate: Long): List<Event> {
+    suspend fun getEventsForCalendar(calendarId: String, calendarName: String, startTime: Long, endTime: Long, minLastDate: Long): List<Event> {
         if (!hasReadCalendarPermission()) return emptyList()
         val events = mutableListOf<Event>()
         val uriBuilder = CalendarContract.Instances.CONTENT_URI.buildUpon()
@@ -122,11 +125,12 @@ class CalendarRepository @Inject constructor(
             CalendarContract.Instances.BEGIN,
             CalendarContract.Instances.END,
             CalendarContract.Instances.CALENDAR_ID,
-            CalendarContract.Instances.LAST_DATE // Add LAST_DATE to projection
+            CalendarContract.Instances.EVENT_LOCATION,
+            CalendarContract.Instances.ALL_DAY
         )
 
-        val selection = "${CalendarContract.Instances.CALENDAR_ID} = ? AND ${CalendarContract.Instances.LAST_DATE} > ?"
-        val selectionArgs = arrayOf(calendarId, minLastDate.toString())
+        val selection = "${CalendarContract.Instances.CALENDAR_ID} = ?"
+        val selectionArgs = arrayOf(calendarId)
 
         val cursor = contentResolver.query(
             uri,
@@ -136,18 +140,65 @@ class CalendarRepository @Inject constructor(
             null
         )
 
+        val eventIds = mutableListOf<String>()
+        val eventsFromInstances = mutableListOf<Event>()
+
         cursor?.use {
             while (it.moveToNext()) {
                 val eventId = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID))
-                val title = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.TITLE))
-                val begin = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN))
-                val end = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.END))
-                val calId = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.CALENDAR_ID))
-                val lastDate = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.LAST_DATE))
-
-                events.add(Event(eventId, calId, title, begin, end, false)) // isSeen will be managed by local DB
+                eventIds.add(eventId)
+                eventsFromInstances.add(
+                    Event(
+                        id = eventId,
+                        calendarId = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.CALENDAR_ID)),
+                        calendarName = calendarName,
+                        title = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.TITLE)),
+                        startTime = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN)),
+                        endTime = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Instances.END)),
+                        isSeen = false,
+                        location = it.getString(it.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_LOCATION)),
+                        isAllDay = it.getInt(it.getColumnIndexOrThrow(CalendarContract.Instances.ALL_DAY)) == 1,
+                        lastDate = 0 // placeholder
+                    )
+                )
             }
         }
+
+        if (eventIds.isEmpty()) {
+            return emptyList()
+        }
+
+        val eventDtStampMap = mutableMapOf<String, Long>()
+        val eventsProjection = arrayOf(
+            CalendarContract.Events._ID,
+            "dtstamp"
+        )
+        val eventsSelection = "${CalendarContract.Events._ID} IN (${eventIds.joinToString(separator = ",") { "?" }})"
+        val eventsSelectionArgs = eventIds.toTypedArray()
+
+        val eventsCursor = contentResolver.query(
+            CalendarContract.Events.CONTENT_URI,
+            eventsProjection,
+            eventsSelection,
+            eventsSelectionArgs,
+            null
+        )
+
+        eventsCursor?.use {
+            while (it.moveToNext()) {
+                val eventId = it.getString(it.getColumnIndexOrThrow(CalendarContract.Events._ID))
+                val dtstamp = it.getLong(it.getColumnIndexOrThrow("dtstamp"))
+                eventDtStampMap[eventId] = dtstamp
+            }
+        }
+
+        for (event in eventsFromInstances) {
+            val dtstamp = eventDtStampMap[event.id]
+            if (dtstamp != null && dtstamp > minLastDate) {
+                events.add(event.copy(lastDate = dtstamp))
+            }
+        }
+
         return events
     }
 }

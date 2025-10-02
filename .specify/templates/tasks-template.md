@@ -53,6 +53,7 @@
 - [ ] T005 [P] Contract test GET /api/users/{id} in tests/contract/test_users_get.py
 - [ ] T006 [P] Integration test user registration in tests/integration/test_registration.py
 - [ ] T007 [P] Integration test auth flow in tests/integration/test_auth.py
+- [ ] T008 [P] Unit test Flow-based asynchronous operations using Turbine
 
 ## Phase 3.3: Core Implementation (ONLY after tests are failing)
 - [ ] T008 [P] User model in src/models/user.py
@@ -112,7 +113,10 @@ Task: "Integration test auth in tests/integration/test_auth.py"
    - Each story → integration test [P]
    - Quickstart scenarios → validation tasks
 
-4. **Ordering**:
+4. **From Flows**:
+   - Each Flow-based asynchronous operation → Turbine unit test task [P]
+
+5. **Ordering**:
    - Setup → Tests → Models → Services → Endpoints → Polish
    - Dependencies block parallel execution
 

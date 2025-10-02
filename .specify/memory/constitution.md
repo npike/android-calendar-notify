@@ -1,50 +1,47 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report
+- Version change: 1.1.2 → 1.2.0
+- List of modified principles: None
+- Added sections:
+  - VIII. Flow Testing with Turbine
+- Removed sections: None
+- Templates requiring updates:
+  - .specify/templates/plan-template.md ⚠ pending
+  - .specify/templates/spec-template.md ⚠ pending
+  - .specify/templates/tasks-template.md ⚠ pending
+  - .specify/templates/commands/*.md ⚠ pending
+- Follow-up TODOs: None
+-->
+# android-calendar-notify Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Kotlin First
+All new code MUST be written in Kotlin. Java is only permitted for maintaining existing legacy code.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Material Design
+The user interface MUST adhere to Google's Material Design guidelines to ensure a consistent and intuitive user experience.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Unit Tests (NON-NEGOTIABLE)
+All business logic, view models, and data layers MUST be accompanied by unit tests. TDD is strongly encouraged.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Offline First
+The application MUST be designed to be functional without a network connection wherever possible. Data synchronization should handle offline periods gracefully.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Clean Architecture
+The codebase MUST follow the principles of Clean Architecture, separating concerns into distinct layers (e.g., UI, Domain, Data).
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+### VI. Architecture
+The Data Layer must expose Flow objects to the Domain/Presentation Layer. ViewModels must consume Flow and expose StateFlow or Compose State. Direct use of Callbacks or RxJava is forbidden.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### VII. UI State Hoisting
+Composables MUST use state hoisting. ViewModel instances MUST NOT be passed directly into Composables. `hiltViewModel()` MUST NOT be used directly within Composables.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
-
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### VIII. Flow Testing with Turbine
+All Flow-based asynchronous operations in unit tests MUST be tested using the Turbine library to ensure reliable and concise testing of flow emissions.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+All code reviews MUST verify compliance with this constitution. Any deviation requires explicit justification and approval.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.2.0 | **Ratified**: 2025-09-29 | **Last Amended**: 2025-09-30
