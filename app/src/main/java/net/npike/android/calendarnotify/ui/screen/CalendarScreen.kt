@@ -93,7 +93,7 @@ fun CalendarItemDarkPreview() {
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun CalendarScreenPreview() {
     CalendarNotifyTheme {
