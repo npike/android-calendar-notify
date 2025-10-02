@@ -53,7 +53,7 @@ class CalendarScreenViewModelTest {
     @Test
     fun `loadCalendars updates calendars state`() = runBlocking {
         // Arrange
-        val calendars = listOf(Calendar("1", "Work", 0, true))
+        val calendars = listOf(Calendar("1", "Work", 0, true, isSynced = true))
         coEvery { mockGetCalendarsUseCase() } returns flowOf(calendars)
 
         // Act
@@ -66,7 +66,7 @@ class CalendarScreenViewModelTest {
     @Test
     fun `onCalendarToggled calls repository`() = runBlocking {
         // Arrange
-        val calendar = Calendar("1", "Work", 0, true)
+        val calendar = Calendar("1", "Work", 0, true, isSynced = true)
 
         // Act
         viewModel.onCalendarToggled(calendar, false)

@@ -16,9 +16,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 
 @ExperimentalCoroutinesApi
@@ -36,8 +34,7 @@ class SetupStatusManagerTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         dataStore = PreferenceDataStoreFactory.create(
             scope = testScope,
-            produceFile = { context.preferencesDataStoreFile("test_setup_status_prefs") }
-        )
+            produceFile = { context.preferencesDataStoreFile("test_setup_status_prefs") })
         setupStatusManager = SetupStatusManager(dataStore)
     }
 

@@ -32,7 +32,7 @@ class CheckForNewEventsUseCaseTest {
     @Test
     fun `invoke shows notifications for new events and updates last known event ID`() = runBlocking {
         // Arrange
-        val monitoredCalendars = listOf(Calendar("1", "Work", 0, true))
+        val monitoredCalendars = listOf(Calendar("1", "Work", 0, true, isSynced = true))
         coEvery { mockCalendarRepository.getSystemCalendars() } returns flowOf(monitoredCalendars)
         coEvery { mockDataStoreManager.lastKnownEventId } returns flowOf(100L)
 
@@ -53,7 +53,7 @@ class CheckForNewEventsUseCaseTest {
     @Test
     fun `invoke does nothing when there are no new events`() = runBlocking {
         // Arrange
-        val monitoredCalendars = listOf(Calendar("1", "Work", 0, true))
+        val monitoredCalendars = listOf(Calendar("1", "Work", 0, true, isSynced = true))
         coEvery { mockCalendarRepository.getSystemCalendars() } returns flowOf(monitoredCalendars)
         coEvery { mockDataStoreManager.lastKnownEventId } returns flowOf(100L)
         coEvery { mockCalendarRepository.getEventsFromCalendarProviderSinceEventId("1", 100L) } returns emptyList()

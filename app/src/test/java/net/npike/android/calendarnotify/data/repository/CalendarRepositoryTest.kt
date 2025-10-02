@@ -5,8 +5,9 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.database.MatrixCursor
 import android.provider.CalendarContract
-import androidx.test.core.app.ApplicationProvider
 import androidx.core.content.ContextCompat
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -15,12 +16,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import net.npike.android.calendarnotify.data.local.DataStoreManager
-import net.npike.android.calendarnotify.domain.model.Event
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
 @RunWith(AndroidJUnit4::class)
 class CalendarRepositoryTest {
@@ -33,7 +32,12 @@ class CalendarRepositoryTest {
     @Before
     fun setup() {
         mockkStatic(ContextCompat::class)
-        every { ContextCompat.checkSelfPermission(any(), any()) } returns PackageManager.PERMISSION_GRANTED
+        every {
+            ContextCompat.checkSelfPermission(
+                any(),
+                any()
+            )
+        } returns PackageManager.PERMISSION_GRANTED
 
         repository = CalendarRepository(
             context = context,
@@ -45,16 +49,27 @@ class CalendarRepositoryTest {
     @Test
     fun `getSystemCalendars applies unmonitored IDs from DataStore`() = runBlocking {
         // Arrange
-        val calendarsCursor = MatrixCursor(arrayOf(
-            CalendarContract.Calendars._ID,
-            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
-            CalendarContract.Calendars.CALENDAR_COLOR,
-            CalendarContract.Calendars.IS_PRIMARY
-        )).apply {
-            addRow(arrayOf("1", "Personal", -1, 1))
-            addRow(arrayOf("2", "Work", -1, 0))
+        val calendarsCursor = MatrixCursor(
+            arrayOf(
+                CalendarContract.Calendars._ID,
+                CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+                CalendarContract.Calendars.CALENDAR_COLOR,
+                CalendarContract.Calendars.IS_PRIMARY,
+                CalendarContract.Calendars.SYNC_EVENTS
+            )
+        ).apply {
+            addRow(arrayOf("1", "Personal", -1, 1, 1)) // Added 1 for SYNC_EVENTS
+            addRow(arrayOf("2", "Work", -1, 0, 1)) // Added 1 for SYNC_EVENTS
         }
-        every { mockContentResolver.query(any(), any(), any(), any(), any()) } returns calendarsCursor
+        every {
+            mockContentResolver.query(
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+            )
+        } returns calendarsCursor
         coEvery { mockDataStoreManager.unmonitoredCalendarIds } returns flowOf(setOf("2"))
 
         // Act
@@ -83,27 +98,38 @@ class CalendarRepositoryTest {
     }
 
     @Test
-    fun `getEventsFromCalendarProviderSinceEventId queries for events with ID greater than lastEventId`() = runBlocking {
-        // Arrange
-        val eventsCursor = MatrixCursor(arrayOf(
-            CalendarContract.Events._ID,
-            CalendarContract.Events.TITLE,
-            CalendarContract.Events.DTSTART,
-            CalendarContract.Events.DTEND,
-            CalendarContract.Events.CALENDAR_ID,
-            CalendarContract.Events.EVENT_LOCATION,
-            CalendarContract.Events.ALL_DAY,
-            CalendarContract.Events.LAST_DATE
-        )).apply {
-            addRow(arrayOf(101L, "New Event", 0L, 0L, "1", "Location", 0, 0L))
+    fun `getEventsFromCalendarProviderSinceEventId queries for events with ID greater than lastEventId`() =
+        runBlocking {
+            // Arrange
+            val eventsCursor = MatrixCursor(
+                arrayOf(
+                    CalendarContract.Events._ID,
+                    CalendarContract.Events.TITLE,
+                    CalendarContract.Events.DTSTART,
+                    CalendarContract.Events.DTEND,
+                    CalendarContract.Events.CALENDAR_ID,
+                    CalendarContract.Events.EVENT_LOCATION,
+                    CalendarContract.Events.ALL_DAY,
+                    CalendarContract.Events.LAST_DATE
+                )
+            ).apply {
+                addRow(arrayOf(101L, "New Event", 0L, 0L, "1", "Location", 0, 0L))
+            }
+            every {
+                mockContentResolver.query(
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                    any()
+                )
+            } returns eventsCursor
+
+            // Act
+            val events = repository.getEventsFromCalendarProviderSinceEventId("1", 100L)
+
+            // Assert
+            assertEquals(1, events.size)
+            assertEquals("101", events.first().id)
         }
-        every { mockContentResolver.query(any(), any(), any(), any(), any()) } returns eventsCursor
-
-        // Act
-        val events = repository.getEventsFromCalendarProviderSinceEventId("1", 100L)
-
-        // Assert
-        assertEquals(1, events.size)
-        assertEquals("101", events.first().id)
-    }
 }

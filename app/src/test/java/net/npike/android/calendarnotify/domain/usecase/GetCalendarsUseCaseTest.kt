@@ -25,8 +25,8 @@ class GetCalendarsUseCaseTest {
     fun `invoke returns calendars from repository`() = runBlocking {
         // Arrange
         val calendars = listOf(
-            Calendar("1", "Work", 0xFF0000, true),
-            Calendar("2", "Personal", 0x00FF00, false)
+            Calendar("1", "Work", 0xFF0000, true, isSynced = true),
+            Calendar("2", "Personal", 0x00FF00, false, isSynced = true)
         )
         coEvery { mockCalendarRepository.getSystemCalendars() } returns flowOf(calendars)
 

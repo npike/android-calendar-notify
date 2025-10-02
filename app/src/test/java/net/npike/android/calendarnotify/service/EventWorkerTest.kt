@@ -13,8 +13,8 @@ import net.npike.android.calendarnotify.domain.usecase.CheckForNewEventsUseCase
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
 @RunWith(AndroidJUnit4::class)
 class EventWorkerTest {
