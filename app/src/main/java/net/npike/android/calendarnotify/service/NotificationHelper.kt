@@ -63,7 +63,10 @@ class NotificationHelper @Inject constructor(
             "$startTime - $endTime"
         }
 
-        var content = "${event.title}\n$timeText"
+        val dateFormat = SimpleDateFormat("EEEE, MMM d", Locale.getDefault())
+        val dateText = dateFormat.format(Date(event.startTime))
+
+        var content = "$dateText\n${event.title}\n$timeText"
         if (!event.location.isNullOrEmpty()) {
             content += "\n${event.location}"
         }
